@@ -1,0 +1,28 @@
+{
+  "name": "ODbL-1.0",
+  "licenseUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "sourceUrl": "https://github.com/gor3a/vehicle-makes-models",
+  "upstreamUrl": "https://www.autoevolution.com",
+  "version": "v1.0.2",
+  "archiveSha256": "76e524ef5b26c733d2ec911df706f0dec0dcc28f4032f261f0ecf139ba10db8e",
+  "attribution": "Vehicle data from vehicle-makes-models (Mina Sameh / gor3a), originally sourced from autoevolution.com; adapted by BRNavi. Available under ODbL 1.0.",
+  "export": {
+    "method": "catalog.export",
+    "authenticationRequired": false,
+    "kinds": [
+      "makes",
+      "models",
+      "generations",
+      "variants"
+    ],
+    "instructions": "For each kind, request catalog.export {kind,limit:100}; repeat with nextCursor until null. The complete adapted database is available through these public paginated RPCs.",
+    "schemaVersion": 1
+  },
+  "units": {
+    "lengthMm": "millimetres",
+    "widthMm": "millimetres",
+    "heightMm": "millimetres",
+    "curbWeightKg": "kilograms"
+  },
+  "adaptation": "Stable SHA-256 IDs from pinned archive JSON paths; dimensions outside plausible positive ranges become null; omitted source values remain null. Original archive retained by operator. No private garage data is part of this database."
+}

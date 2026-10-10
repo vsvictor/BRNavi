@@ -1,0 +1,30 @@
+[package]
+name = "quic-jsonrpc-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "LicenseRef-Proprietary"
+publish = false
+default-run = "quic-jsonrpc-server"
+
+[dependencies]
+anyhow = "1.0"
+argon2 = "0.5"
+async-trait = "0.1"
+base64 = "0.22"
+map-tiles = { path = "../map-tiles", version = "0.1.0" }
+dotenvy = "0.15"
+mongodb = "3.3"
+quinn = "0.11"
+rand = "0.9"
+rpassword = "7"
+rcgen = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", features = ["ring"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "signal", "time", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

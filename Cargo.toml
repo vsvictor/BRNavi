@@ -1,0 +1,24 @@
+[package]
+name = "brnavi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "LicenseRef-Proprietary"
+publish = false
+description = "Orchestrator: runs quic-jsonrpc-server as a supervised process"
+
+[[bin]]
+name = "brnavi"
+path = "src/main.rs"
+
+[workspace]
+members = [".", "map-tiles", "quic-jsonrpc-server", "quic-jsonrpc-client"]
+
+[dependencies]
+anyhow = "1.0"
+dotenvy = "0.15"
+quic-jsonrpc-server = { path = "quic-jsonrpc-server", version = "0.1.0" }
+rustls = "0.23"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
