@@ -61,6 +61,13 @@ readonly LOCAL_ENV="quic-jsonrpc-server/.env"
 readonly LOCAL_CERT_DIR="certs"
 readonly REMOTE_CERT_DIR="$DEPLOY_DIR/certs"
 readonly CERT_FILES=("server-fullchain.pem" "server-key.pem")
+readonly PACKAGE_SERVER_DIR="$DEPLOY_DIR/offline-region-server"
+readonly PACKAGE_SERVER_SCRIPT="$PACKAGE_SERVER_DIR/server.py"
+readonly PACKAGE_SERVER_PIDFILE="$PACKAGE_SERVER_DIR/server.pid"
+readonly PACKAGE_SERVER_LOG="$PACKAGE_SERVER_DIR/server.log"
+readonly PACKAGE_DATA_DIR="${PACKAGE_DATA_DIR:-$DEPLOY_DIR/offline-region-data}"
+readonly PACKAGE_SERVER_BIND="${PACKAGE_SERVER_BIND:-127.0.0.1}"
+readonly PACKAGE_SERVER_PORT="${PACKAGE_SERVER_PORT:-8080}"
 
 # Parse arguments
 NO_BUILD=false
@@ -274,6 +281,20 @@ check_server_status() {
     status_failed=1
   fi
 
+  print_stage "Checking Offline Package Server"
+  if ssh_exec "pidfile='$PACKAGE_SERVER_PIDFILE'; script='$PACKAGE_SERVER_SCRIPT'; [ -r \"\$pidfile\" ] || exit 1; pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) exit 1;; esac; kill -0 \"\$pid\" 2>/dev/null && ps -p \"\$pid\" -o args= | grep -F -- \"\$script\" >/dev/null" 2>/dev/null; then
+    log_success "Offline package server process found"
+    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://127.0.0.1:$PACKAGE_SERVER_PORT/healthz\", timeout=3).status == 200'" 2>/dev/null; then
+      log_success "Offline package server health check succeeded on port $PACKAGE_SERVER_PORT"
+    else
+      log_warning "Offline package server is running but health check failed"
+      status_failed=1
+    fi
+  else
+    log_warning "Offline package server is not running"
+    status_failed=1
+  fi
+
   if [ "$status_failed" -ne 0 ]; then
     return 1
   fi
@@ -320,7 +341,11 @@ prepare_remote() {
   print_stage "Preparing Remote Host"
 
   log_info "Creating deployment directory: $DEPLOY_DIR"
-  ssh_exec "mkdir -p '$DEPLOY_DIR'" || true
+  ssh_exec "mkdir -p '$DEPLOY_DIR' '$PACKAGE_SERVER_DIR' '$PACKAGE_DATA_DIR'"
+  if ! ssh_exec "python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'"; then
+    log_error "Python 3.10 or newer is required on the remote host"
+    exit 1
+  fi
 
   log_success "Remote directory ready"
 }
@@ -342,6 +367,9 @@ stop_remote_server() {
     log_info "Waiting for port to be released..."
     sleep 2
   fi
+
+  log_info "Stopping the offline package server if it is already running..."
+  ssh_exec "pidfile='$PACKAGE_SERVER_PIDFILE'; script='$PACKAGE_SERVER_SCRIPT'; if [ -r \"\$pidfile\" ]; then pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) rm -f \"\$pidfile\";; *) if kill -0 \"\$pid\" 2>/dev/null && ps -p \"\$pid\" -o args= | grep -F -- \"\$script\" >/dev/null; then kill -TERM \"\$pid\"; sleep 1; fi; rm -f \"\$pidfile\";; esac; fi"
 }
 
 # Deploy binary
@@ -366,6 +394,21 @@ deploy_binary() {
   ssh_exec "chmod +x '$REMOTE_BINARY'"
 
   log_success "Binary deployed successfully"
+}
+
+# Deploy the independent Python package-server process.
+deploy_package_server() {
+  print_stage "Deploying Offline Package Server"
+
+  if [ ! -f "offline-region-server/server.py" ]; then
+    log_error "Offline package server source not found: offline-region-server/server.py"
+    exit 1
+  fi
+
+  ssh_copy "offline-region-server/server.py" "$PACKAGE_SERVER_SCRIPT"
+  ssh_exec "chmod 644 '$PACKAGE_SERVER_SCRIPT'"
+  log_success "Offline package server deployed to $PACKAGE_SERVER_SCRIPT"
+  log_info "Package data remains in $PACKAGE_DATA_DIR and is not overwritten by deployments"
 }
 
 # Deploy configuration
@@ -461,6 +504,36 @@ start_remote_server() {
   fi
 }
 
+# Start and health-check the HTTP sidecar. It is bound to loopback by default so only an HTTPS
+# reverse proxy should expose it to mobile clients.
+start_package_server() {
+  print_stage "Starting Offline Package Server"
+  log_info "Starting HTTP package server on $PACKAGE_SERVER_BIND:$PACKAGE_SERVER_PORT"
+
+  if [[ ! "$PACKAGE_SERVER_PORT" =~ ^[0-9]+$ ]] || (( PACKAGE_SERVER_PORT < 1 || PACKAGE_SERVER_PORT > 65535 )); then
+    log_error "PACKAGE_SERVER_PORT must be between 1 and 65535"
+    exit 1
+  fi
+  if [[ ! "$PACKAGE_SERVER_BIND" =~ ^[A-Za-z0-9.:_-]+$ ]]; then
+    log_error "PACKAGE_SERVER_BIND must be a host name or IP address"
+    exit 1
+  fi
+
+  ssh_exec "mkdir -p '$PACKAGE_DATA_DIR' '$PACKAGE_SERVER_DIR' && cd '$DEPLOY_DIR' && (setsid nohup python3 -u '$PACKAGE_SERVER_SCRIPT' --data-dir '$PACKAGE_DATA_DIR' --host '$PACKAGE_SERVER_BIND' --port '$PACKAGE_SERVER_PORT' > '$PACKAGE_SERVER_LOG' 2>&1 < /dev/null & echo \$! > '$PACKAGE_SERVER_PIDFILE')"
+
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://127.0.0.1:$PACKAGE_SERVER_PORT/healthz\", timeout=2).status == 200'" 2>/dev/null; then
+      log_success "Offline package server is healthy"
+      return 0
+    fi
+    sleep 1
+  done
+
+  log_error "Offline package server failed to start; recent log output:"
+  ssh_exec "tail -40 '$PACKAGE_SERVER_LOG'" || true
+  exit 1
+}
+
 # Show server logs
 show_server_logs() {
   print_stage "Server Startup Logs"
@@ -484,6 +557,9 @@ show_final_status() {
   echo "  Binary: $REMOTE_BINARY"
   echo "  Config: $REMOTE_ENV"
   echo "  Logs: $DEPLOY_DIR/server.log"
+  echo "  Offline package server: http://127.0.0.1:$PACKAGE_SERVER_PORT"
+  echo "  Package data: $PACKAGE_DATA_DIR"
+  echo "  Package server logs: $PACKAGE_SERVER_LOG"
   echo ""
 
   echo "To check server status:"
@@ -492,7 +568,8 @@ show_final_status() {
   echo ""
 
   echo "To manually stop the server:"
-  echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"pkill -f $BINARY_NAME\""
+  echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"kill \\\$(cat '$PACKAGE_SERVER_PIDFILE')\" # offline package server"
+  echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"pkill -f $BINARY_NAME\" # QUIC backend"
   echo ""
 }
 
@@ -529,8 +606,10 @@ main() {
   prepare_remote
   stop_remote_server
   deploy_binary
+  deploy_package_server
   deploy_config
   start_remote_server
+  start_package_server
   show_server_logs
 
   # Give server time to fully initialize
@@ -546,4 +625,3 @@ trap 'log_error "Deployment failed at line $LINENO"' ERR
 
 # Execute main function
 main "$@"
-
