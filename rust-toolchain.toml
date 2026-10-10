@@ -1,0 +1,5 @@
+[toolchain]
+# Stable channel; the minimum supported compiler is declared via `rust-version` in Cargo.toml
+# (edition 2024 + let-chains need >= 1.88). CI uses the same channel.
+channel = "stable"
+components = ["rustfmt", "clippy"]

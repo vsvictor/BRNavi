@@ -1,4 +1,18 @@
+# Build output
 /target
-/.idea/modules.xml
-/.idea/vcs.xml
-/.idea/BRNavi.iml
+
+# Local secrets / TLS identity
+/certs/
+
+# Runtime state
+*.log
+
+# Local .env files (fallback for the service crates); .env.example is the template
+.env
+!**/.env.example
+
+# IDE
+/.idea/
+
+# Native libs produced by tool/build_rust_android.sh (rebuilt, not versioned)
+/android/app/src/main/jniLibs/

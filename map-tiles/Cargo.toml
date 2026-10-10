@@ -1,0 +1,20 @@
+[package]
+name = "map-tiles"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "LicenseRef-Proprietary"
+publish = false
+description = "Map tile proxy: fetches {z}/{x}/{y} raster tiles from an OSM-style server with a byte-bounded in-memory cache"
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
