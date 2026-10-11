@@ -4,18 +4,23 @@
 #                    BRNavi Deployment Script                                 #
 #                                                                             #
 # Usage:                                                                      #
-#   ./deploy.sh [--no-build] [--status-only]                                #
+#   ./deploy.sh [--no-build] [--status-only] [--package-server-only]        #
 #                                                                             #
 # Options:                                                                    #
 #   --no-build      Skip build phase, use existing binary                   #
 #   --status-only   Only check server status on remote host                 #
+#   --package-server-only Deploy/restart only the offline HTTP sidecar       #
 #                                                                             #
 # Environment:                                                                #
 #   DEPLOY_HOST     Target host (default: 192.168.1.132)                    #
 #   DEPLOY_USER     SSH user (default: dev)                                 #
 #   DEPLOY_PASS     SSH password (will prompt if not set)                   #
+#   SSH_PORT        SSH port (default: 22)
 #   DEPLOY_PORT     QUIC server port (default: 8443)                        #
 #   DEPLOY_DIR      Remote deploy directory (default: /home/dev/brnavi)  #
+#   PACKAGE_SERVER_PORT  Offline package HTTP port (default: 8400)
+#   PACKAGE_SERVER_BIND  Offline package bind address (default: 192.168.0.160)
+#   PACKAGE_DATA_DIR      Persistent offline package directory
 #   QUIC_CHECK_TIMEOUT      Timeout for health-check command (default: 12s)  #
 #   QUIC_CHECK_SERVERNAME   SNI for health-check (default: tms.express-t.ua) #
 #   QUIC_HEALTH_CA_CERT     Local CA PEM path for quic-jsonrpc-client        #
@@ -38,6 +43,7 @@ readonly NC='\033[0m' # No Color
 # Configuration
 readonly DEPLOY_HOST="${DEPLOY_HOST:-192.168.1.132}"
 readonly DEPLOY_USER="${DEPLOY_USER:-dev}"
+readonly SSH_PORT="${SSH_PORT:-22}"
 readonly DEPLOY_PORT="${DEPLOY_PORT:-8443}"
 readonly DEPLOY_DIR="${DEPLOY_DIR:-/home/dev/brnavi}"
 readonly QUIC_CHECK_TIMEOUT="${QUIC_CHECK_TIMEOUT:-12}"
@@ -66,12 +72,13 @@ readonly PACKAGE_SERVER_SCRIPT="$PACKAGE_SERVER_DIR/server.py"
 readonly PACKAGE_SERVER_PIDFILE="$PACKAGE_SERVER_DIR/server.pid"
 readonly PACKAGE_SERVER_LOG="$PACKAGE_SERVER_DIR/server.log"
 readonly PACKAGE_DATA_DIR="${PACKAGE_DATA_DIR:-$DEPLOY_DIR/offline-region-data}"
-readonly PACKAGE_SERVER_BIND="${PACKAGE_SERVER_BIND:-127.0.0.1}"
-readonly PACKAGE_SERVER_PORT="${PACKAGE_SERVER_PORT:-8080}"
+readonly PACKAGE_SERVER_BIND="${PACKAGE_SERVER_BIND:-192.168.0.160}"
+readonly PACKAGE_SERVER_PORT="${PACKAGE_SERVER_PORT:-8400}"
 
 # Parse arguments
 NO_BUILD=false
 STATUS_ONLY=false
+PACKAGE_SERVER_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-build)
@@ -80,6 +87,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --status-only)
       STATUS_ONLY=true
+      shift
+      ;;
+    --package-server-only)
+      PACKAGE_SERVER_ONLY=true
       shift
       ;;
     *)
@@ -116,15 +127,25 @@ print_stage() {
 # ...existing code...
 ssh_exec() {
   local cmd="$1"
-  sshpass -p "$DEPLOY_PASS" ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    "$DEPLOY_USER@$DEPLOY_HOST" "$cmd"
+  local -a ssh_args=(-n -p "$SSH_PORT" -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+  if [ -n "${DEPLOY_PASS:-}" ]; then
+    command -v sshpass >/dev/null 2>&1 || { log_error "sshpass is required when DEPLOY_PASS is set"; return 1; }
+    sshpass -p "$DEPLOY_PASS" ssh "${ssh_args[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "$cmd"
+  else
+    ssh "${ssh_args[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "$cmd"
+  fi
 }
 
 ssh_copy() {
   local src="$1"
   local dst="$2"
-  sshpass -p "$DEPLOY_PASS" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    "$src" "$DEPLOY_USER@$DEPLOY_HOST:$dst"
+  local -a scp_args=(-P "$SSH_PORT" -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+  if [ -n "${DEPLOY_PASS:-}" ]; then
+    command -v sshpass >/dev/null 2>&1 || { log_error "sshpass is required when DEPLOY_PASS is set"; return 1; }
+    sshpass -p "$DEPLOY_PASS" scp "${scp_args[@]}" "$src" "$DEPLOY_USER@$DEPLOY_HOST:$dst"
+  else
+    scp "${scp_args[@]}" "$src" "$DEPLOY_USER@$DEPLOY_HOST:$dst"
+  fi
 }
 
 # Check SSH connectivity
@@ -133,13 +154,6 @@ check_ssh_connection() {
 
   log_info "Host: $DEPLOY_HOST"
   log_info "User: $DEPLOY_USER"
-
-  if ! command -v sshpass &> /dev/null; then
-    log_error "sshpass not found. Please install it:"
-    log_error "  Ubuntu/Debian: sudo apt-get install sshpass"
-    log_error "  macOS: brew install sshpass"
-    exit 1
-  fi
 
   if ssh_exec "echo 'SSH connection successful'" > /dev/null 2>&1; then
     log_success "SSH connection successful"
@@ -152,20 +166,55 @@ check_ssh_connection() {
 # Get SSH password if not set
 get_ssh_password() {
   if [ -z "${DEPLOY_PASS:-}" ]; then
+    if ssh -n -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=5 \
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      "$DEPLOY_USER@$DEPLOY_HOST" true >/dev/null 2>&1; then
+      log_info "Using SSH key authentication"
+      return
+    fi
+    if ! command -v sshpass >/dev/null 2>&1; then
+      log_error "SSH key authentication failed and sshpass is unavailable; configure an SSH key or install sshpass for password authentication"
+      exit 1
+    fi
     read -sp "Enter SSH password for $DEPLOY_USER: " DEPLOY_PASS
     echo ""
   fi
   export DEPLOY_PASS
 }
 
+run_with_timeout() {
+  local duration="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${duration}s" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${duration}s" "$@"
+  else
+    python3 -c '
+import os
+import signal
+import subprocess
+import sys
+
+process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    result = process.wait(timeout=float(sys.argv[1]))
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    sys.exit(124)
+sys.exit(result)
+' "$duration" "$@"
+  fi
+}
+
 # Active QUIC health-check from local machine (deploy host) to remote endpoint.
 check_quic_handshake() {
   log_info "Running QUIC client health-check from local machine to ${DEPLOY_HOST}:${DEPLOY_PORT} (SNI: ${QUIC_CHECK_SERVERNAME})"
-
-  if ! command -v timeout >/dev/null 2>&1; then
-    log_warning "'timeout' command is not available, QUIC health-check failed"
-    return 1
-  fi
 
   if ! command -v cargo >/dev/null 2>&1; then
     log_warning "'cargo' command is not available, QUIC health-check failed"
@@ -183,7 +232,7 @@ check_quic_handshake() {
   local attempt=1
 
   while [ "$attempt" -le "$total_attempts" ]; do
-    quic_output=$(timeout "${QUIC_CHECK_TIMEOUT}s" \
+    quic_output=$(run_with_timeout "$QUIC_CHECK_TIMEOUT" \
       cargo run --quiet -p quic-jsonrpc-client -- \
       "${DEPLOY_HOST}:${DEPLOY_PORT}" \
       "$QUIC_HEALTH_CA_CERT" \
@@ -284,7 +333,9 @@ check_server_status() {
   print_stage "Checking Offline Package Server"
   if ssh_exec "pidfile='$PACKAGE_SERVER_PIDFILE'; script='$PACKAGE_SERVER_SCRIPT'; [ -r \"\$pidfile\" ] || exit 1; pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) exit 1;; esac; kill -0 \"\$pid\" 2>/dev/null && ps -p \"\$pid\" -o args= | grep -F -- \"\$script\" >/dev/null" 2>/dev/null; then
     log_success "Offline package server process found"
-    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://127.0.0.1:$PACKAGE_SERVER_PORT/healthz\", timeout=3).status == 200'" 2>/dev/null; then
+    local health_host="$PACKAGE_SERVER_BIND"
+    if [ "$health_host" = "0.0.0.0" ]; then health_host="127.0.0.1"; fi
+    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://$health_host:$PACKAGE_SERVER_PORT/healthz\", timeout=3).status == 200'" 2>/dev/null; then
       log_success "Offline package server health check succeeded on port $PACKAGE_SERVER_PORT"
     else
       log_warning "Offline package server is running but health check failed"
@@ -342,8 +393,8 @@ prepare_remote() {
 
   log_info "Creating deployment directory: $DEPLOY_DIR"
   ssh_exec "mkdir -p '$DEPLOY_DIR' '$PACKAGE_SERVER_DIR' '$PACKAGE_DATA_DIR'"
-  if ! ssh_exec "python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'"; then
-    log_error "Python 3.10 or newer is required on the remote host"
+  if ! ssh_exec "python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'"; then
+    log_error "Python 3.9 or newer is required on the remote host"
     exit 1
   fi
 
@@ -368,6 +419,10 @@ stop_remote_server() {
     sleep 2
   fi
 
+  stop_package_server
+}
+
+stop_package_server() {
   log_info "Stopping the offline package server if it is already running..."
   ssh_exec "pidfile='$PACKAGE_SERVER_PIDFILE'; script='$PACKAGE_SERVER_SCRIPT'; if [ -r \"\$pidfile\" ]; then pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) rm -f \"\$pidfile\";; *) if kill -0 \"\$pid\" 2>/dev/null && ps -p \"\$pid\" -o args= | grep -F -- \"\$script\" >/dev/null; then kill -TERM \"\$pid\"; sleep 1; fi; rm -f \"\$pidfile\";; esac; fi"
 }
@@ -469,9 +524,7 @@ start_remote_server() {
   # Start server in background, fully detached from the ssh session. Even so, some sshd/pty
   # combinations keep the session open until the child exits — bound the call with `timeout`
   # (the server itself is unaffected; we verify it below via pidof / port / QUIC check).
-  timeout 10 sshpass -p "$DEPLOY_PASS" ssh -n -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    "$DEPLOY_USER@$DEPLOY_HOST" \
-    "cd '$DEPLOY_DIR' && (setsid nohup ./$BINARY_NAME > server.log 2>&1 < /dev/null &) ; exit 0" \
+  ssh_exec "cd '$DEPLOY_DIR' && (setsid nohup ./$BINARY_NAME > server.log 2>&1 < /dev/null &) ; exit 0" \
     >/dev/null 2>&1 || true
 
   log_info "Waiting for server to start..."
@@ -509,6 +562,7 @@ start_remote_server() {
 start_package_server() {
   print_stage "Starting Offline Package Server"
   log_info "Starting HTTP package server on $PACKAGE_SERVER_BIND:$PACKAGE_SERVER_PORT"
+  local health_host="$PACKAGE_SERVER_BIND"
 
   if [[ ! "$PACKAGE_SERVER_PORT" =~ ^[0-9]+$ ]] || (( PACKAGE_SERVER_PORT < 1 || PACKAGE_SERVER_PORT > 65535 )); then
     log_error "PACKAGE_SERVER_PORT must be between 1 and 65535"
@@ -518,11 +572,16 @@ start_package_server() {
     log_error "PACKAGE_SERVER_BIND must be a host name or IP address"
     exit 1
   fi
+  if [[ ! "$PACKAGE_DATA_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    log_error "PACKAGE_DATA_DIR must be a simple absolute path"
+    exit 1
+  fi
+  if [ "$health_host" = "0.0.0.0" ]; then health_host="127.0.0.1"; fi
 
-  ssh_exec "mkdir -p '$PACKAGE_DATA_DIR' '$PACKAGE_SERVER_DIR' && cd '$DEPLOY_DIR' && (setsid nohup python3 -u '$PACKAGE_SERVER_SCRIPT' --data-dir '$PACKAGE_DATA_DIR' --host '$PACKAGE_SERVER_BIND' --port '$PACKAGE_SERVER_PORT' > '$PACKAGE_SERVER_LOG' 2>&1 < /dev/null & echo \$! > '$PACKAGE_SERVER_PIDFILE')"
+  ssh_exec "mkdir -p '$PACKAGE_DATA_DIR' '$PACKAGE_SERVER_DIR' && (nohup python3 -u '$PACKAGE_SERVER_SCRIPT' --data-dir '$PACKAGE_DATA_DIR' --host '$PACKAGE_SERVER_BIND' --port '$PACKAGE_SERVER_PORT' > '$PACKAGE_SERVER_LOG' 2>&1 < /dev/null & echo \$! > '$PACKAGE_SERVER_PIDFILE')"
 
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://127.0.0.1:$PACKAGE_SERVER_PORT/healthz\", timeout=2).status == 200'" 2>/dev/null; then
+    if ssh_exec "python3 -c 'import urllib.request; assert urllib.request.urlopen(\"http://$health_host:$PACKAGE_SERVER_PORT/healthz\", timeout=2).status == 200'" 2>/dev/null; then
       log_success "Offline package server is healthy"
       return 0
     fi
@@ -541,6 +600,8 @@ show_server_logs() {
   log_info "Last 30 lines of server log:"
   echo ""
   ssh_exec "tail -30 '$DEPLOY_DIR/server.log'" || true
+  log_info "Last 30 lines of offline package server log:"
+  ssh_exec "tail -30 '$PACKAGE_SERVER_LOG'" || true
 }
 
 # Show final status
@@ -557,7 +618,7 @@ show_final_status() {
   echo "  Binary: $REMOTE_BINARY"
   echo "  Config: $REMOTE_ENV"
   echo "  Logs: $DEPLOY_DIR/server.log"
-  echo "  Offline package server: http://127.0.0.1:$PACKAGE_SERVER_PORT"
+  echo "  Offline package server: http://$PACKAGE_SERVER_BIND:$PACKAGE_SERVER_PORT"
   echo "  Package data: $PACKAGE_DATA_DIR"
   echo "  Package server logs: $PACKAGE_SERVER_LOG"
   echo ""
@@ -568,7 +629,7 @@ show_final_status() {
   echo ""
 
   echo "To manually stop the server:"
-  echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"kill \\\$(cat '$PACKAGE_SERVER_PIDFILE')\" # offline package server"
+  echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"if [ -r '$PACKAGE_SERVER_PIDFILE' ]; then kill \\\$(cat '$PACKAGE_SERVER_PIDFILE'); fi\" # offline package server"
   echo "  ssh $DEPLOY_USER@$DEPLOY_HOST \"pkill -f $BINARY_NAME\" # QUIC backend"
   echo ""
 }
@@ -580,6 +641,17 @@ main() {
   echo "Date: $(date)"
   echo ""
 
+  if [[ "$STATUS_ONLY" != true ]]; then
+    if [[ ! "$PACKAGE_SERVER_PORT" =~ ^[0-9]+$ ]] || (( PACKAGE_SERVER_PORT < 1 || PACKAGE_SERVER_PORT > 65535 )); then
+      log_error "PACKAGE_SERVER_PORT must be between 1 and 65535"
+      exit 1
+    fi
+    if [[ ! "$PACKAGE_SERVER_BIND" =~ ^[A-Za-z0-9.:_-]+$ ]] || [[ ! "$PACKAGE_DATA_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+      log_error "Invalid package server bind address or data directory"
+      exit 1
+    fi
+  fi
+
   # Get password first
   get_ssh_password
 
@@ -587,6 +659,16 @@ main() {
   if [ "$STATUS_ONLY" = true ]; then
     check_ssh_connection
     check_server_status
+    exit 0
+  fi
+
+  if [ "$PACKAGE_SERVER_ONLY" = true ]; then
+    check_ssh_connection
+    prepare_remote
+    deploy_package_server
+    stop_package_server
+    start_package_server
+    log_success "Offline package server is available on $PACKAGE_SERVER_BIND:$PACKAGE_SERVER_PORT (HTTPS reverse proxy not configured)"
     exit 0
   fi
 

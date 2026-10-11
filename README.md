@@ -3,12 +3,13 @@
 Бекенд для мобільного клієнта BRNavi: сервіс `quic-jsonrpc-server` у Cargo-воркспейсі з бібліотечним крейтом
 `map-tiles` (проксі тайлів) та **оркестратором** `brnavi`.
 
-| Крейт | Роль | Порти (за замовч.) |
+| Компонент | Роль | Порти (за замовч.) |
 |---|---|---|
 | `quic-jsonrpc-server` | JSON-RPC 2.0 over QUIC: логін водія, сесії, зміни (проксі до 1C driver-api), `map.getTile` | `8443/udp` |
 | `map-tiles` | Бібліотека: проксі тайлів OSM з byte-bounded LRU-кешем і single-flight; транспорт-агностична | — |
 | `quic-jsonrpc-client` | Rust-клієнт + C FFI (`.so` для Android/Flutter) | — |
 | `brnavi` (корінь) | `brnavi` — оркестратор (`cargo run --bin brnavi`) | — |
+| `offline-region-server/` | Окремий Python HTTP-сервіс пакетів офлайн-карт | `127.0.0.1:8400/tcp` |
 
 ## Запуск
 
@@ -19,9 +20,17 @@ make test         # cargo test --workspace
 make lint         # fmt --check + clippy -D warnings (те саме, що CI)
 ```
 
-Ті самі цілі є в `justfile`. Деплой (`deploy.sh`) збирає й запускає бінарник `quic-jsonrpc-server` напряму.
+Ті самі цілі є в `justfile`. Деплой (`deploy.sh`) збирає й запускає QUIC backend та окремий процес Python-сервера пакетів.
 
 Або напряму: `cargo run --bin brnavi`. Вибір сервісів — `TMS_SERVICES=all|rpc`.
+
+## Пакети офлайн-регіонів
+
+Сервер `offline-region-server/server.py` — окремий Python 3.9+ процес; він працює поруч із QUIC backend і не потребує сторонніх Python-пакетів. Щоб розгорнути чи оновити лише його без перезапуску QUIC backend, використовуйте `DEPLOY_HOST=192.168.0.160 DEPLOY_USER=victor DEPLOY_DIR=/Users/victor/brnavi-runtime PACKAGE_SERVER_BIND=192.168.0.160 PACKAGE_SERVER_PORT=8400 ./deploy.sh --package-server-only`. Стан повного стека перевіряється через `./deploy.sh --status-only`. Каталог даних за замовчуванням — `/Users/victor/brnavi-runtime/offline-region-data` у цьому середовищі; він не перезаписується під час деплою.
+
+За замовчуванням HTTP-сервер слухає лише loopback. У цьому середовищі його можна явно прив'язати до `192.168.0.160:8400` для доступу з локальної мережі. З'єднання тоді не шифрується і сервер не має автентифікації: використовуйте його лише в довіреній мережі. Для публічного або недовіреного доступу залиште loopback та налаштуйте HTTPS reverse proxy.
+
+Пакети готуються окремо з OSM PBF та інструментами Valhalla. Скрипт підготовки й докладні вимоги до форматів наведено в `tools/offline-region-server/` репозиторію XRNavi. Після підготовки копіюйте пакет спочатку до віддаленого тимчасового каталогу, а потім атомарно переміщуйте в `<PACKAGE_DATA_DIR>/regions/<region-id>/<version>/`, щоб каталог не показав неповні файли. Див. [`offline-region-server/README.md`](offline-region-server/README.md).
 
 ## Конфігурація
 
