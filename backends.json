@@ -1,0 +1,16 @@
+{
+  "backends": [
+    {
+      "id": "brnavi-backend-1",
+      "host": "backend-1",
+      "ports": { "tcp": 8081 },
+      "pool_size": 4
+    },
+    {
+      "id": "brnavi-backend-2",
+      "host": "backend-2",
+      "ports": { "tcp": 8081 },
+      "pool_size": 4
+    }
+  ]
+}

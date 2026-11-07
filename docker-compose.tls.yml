@@ -1,0 +1,148 @@
+services:
+  backend-1:
+    ports:
+      - "127.0.0.1:18081:8081/tcp"
+
+  backend-2:
+    ports:
+      - "127.0.0.1:18082:8081/tcp"
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mkdir -p /run/brnavi-broker
+        cp /run/certificate-source/mobilespace_app.pem /run/brnavi-broker/leaf.pem
+        awk '/-----BEGIN CERTIFICATE-----/ { certificate++ } certificate <= 2 { print } certificate == 3 { exit }' /run/certificate-source/mobilespace_app_bundle.pem >> /run/brnavi-broker/leaf.pem
+        cp /run/certificate-source/mobilespace_app_key.pem /run/brnavi-broker/key.pem
+        mosquitto_passwd -b -c /run/brnavi-broker/passwords "$$MOSQUITTO_USERNAME" "$$MOSQUITTO_PASSWORD"
+        chmod 0444 /run/brnavi-broker/leaf.pem /run/brnavi-broker/passwords
+        chmod 0400 /run/brnavi-broker/key.pem
+        chown -R mosquitto:mosquitto /run/brnavi-broker
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    environment:
+      MOSQUITTO_USERNAME: brnavi
+      MOSQUITTO_PASSWORD: ${BRNAVI_BROKER_PASSWORD:?Set BRNAVI_BROKER_PASSWORD in .env}
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ${BRNAVI_TLS_DIR:-/home/victor/.ssh/brnavi-tls}:/run/certificate-source:ro
+    tmpfs:
+      - /run/brnavi-broker
+    ports:
+      - "127.0.0.1:1883:1883/tcp"
+      - "${GATEWAY_PUBLISH_ADDRESS:-0.0.0.0}:8883:8883/tcp"
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -u \"$$MOSQUITTO_USERNAME\" -P \"$$MOSQUITTO_PASSWORD\" -t brnavi/health -m ok -q 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  amqp-broker:
+    image: rabbitmq:4-alpine
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mkdir -p /run/brnavi-broker
+        cp /run/certificate-source/mobilespace_app.pem /run/brnavi-broker/leaf.pem
+        awk '/-----BEGIN CERTIFICATE-----/ { certificate++ } certificate <= 2 { print } certificate == 3 { exit }' /run/certificate-source/mobilespace_app_bundle.pem >> /run/brnavi-broker/leaf.pem
+        cp /run/certificate-source/mobilespace_app_key.pem /run/brnavi-broker/key.pem
+        chmod 0444 /run/brnavi-broker/leaf.pem
+        chmod 0400 /run/brnavi-broker/key.pem
+        chown -R rabbitmq:rabbitmq /run/brnavi-broker
+        exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server
+    environment:
+      RABBITMQ_DEFAULT_USER: brnavi
+      RABBITMQ_DEFAULT_PASS: ${BRNAVI_BROKER_PASSWORD:?Set BRNAVI_BROKER_PASSWORD in .env}
+      RABBITMQ_CONFIG_FILE: /etc/rabbitmq/rabbitmq
+    volumes:
+      - ./docker/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ${BRNAVI_TLS_DIR:-/home/victor/.ssh/brnavi-tls}:/run/certificate-source:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    tmpfs:
+      - /run/brnavi-broker
+    ports:
+      - "127.0.0.1:5672:5672/tcp"
+      - "${GATEWAY_PUBLISH_ADDRESS:-0.0.0.0}:5671:5671/tcp"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      GATEWAY_BIND: 0.0.0.0
+      GATEWAY_PORT: 8443
+      GATEWAY_TCP_PORT: 8443
+      GATEWAY_TLS_PORT: 8443
+      GATEWAY_UDP_PORT: 8443
+      GATEWAY_RTP_PORT: 8443
+      GATEWAY_RUDP_PORT: 8443
+      GATEWAY_SRT_PORT: 8443
+      GATEWAY_UDPLITE_PORT: 8443
+      GATEWAY_DCCP_PORT: 8443
+      GATEWAY_MQTT_PORT: 8443
+      GATEWAY_COAP_PORT: 8443
+      GATEWAY_AMQP_PORT: 8443
+      GATEWAY_SCTP_PORT: 8443
+      GATEWAY_QUIC_PORT: 8443
+      GATEWAY_HTTP1_PORT: 8443
+      GATEWAY_HTTP3_PORT: 8443
+      GATEWAY_WS_TCP_PORT: 8443
+      GATEWAY_WS_UDP_PORT: 8443
+      GATEWAY_WS_RTP_PORT: 8443
+      GATEWAY_WS_RUDP_PORT: 8443
+      GATEWAY_WS_SRT_PORT: 8443
+      GATEWAY_WS_MQTT_PORT: 8443
+      GATEWAY_WS_COAP_PORT: 8443
+      GATEWAY_WS_AMQP_PORT: 8443
+      GATEWAY_WS_UDPLITE_PORT: 8443
+      GATEWAY_WS_DCCP_PORT: 8443
+      GATEWAY_WS_SCTP_PORT: 8443
+      GATEWAY_WS_QUIC_PORT: 8443
+      GATEWAY_WS_HTTP1_PORT: 8443
+      GATEWAY_WS_TLS_PORT: 8443
+      GATEWAY_WS_HTTP3_PORT: 8443
+      GATEWAY_SRT_PASSPHRASE: ${GATEWAY_SRT_PASSPHRASE:?Set GATEWAY_SRT_PASSPHRASE in .env}
+      GATEWAY_UDPLITE_SEND_CHECKSUM_COVERAGE: 8
+      GATEWAY_UDPLITE_RECV_CHECKSUM_COVERAGE: 8
+      BACKEND_CONFIG_PATH: /etc/brnavi/backends-host.json
+      MQTT_BROKER_URL: mqtt://brnavi:${BRNAVI_BROKER_PASSWORD:?Set BRNAVI_BROKER_PASSWORD in .env}@127.0.0.1:1883
+      AMQP_BROKER_URL: amqp://brnavi:${BRNAVI_BROKER_PASSWORD:?Set BRNAVI_BROKER_PASSWORD in .env}@127.0.0.1:5672/%2f
+      METRICS_BIND: 127.0.0.1
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      mqtt-broker:
+        condition: service_healthy
+      amqp-broker:
+        condition: service_healthy
+    network_mode: host
+    networks: !reset []
+    ports: !override []
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -ec
+        - 'exec 3<>/dev/tcp/127.0.0.1/8500; printf ''{"action":"list_transports"}\n'' >&3; IFS= read -r -t 5 reply <&3; [[ "$$reply" == *''"success":true''* ]]'
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 30s
+    volumes:
+      - ./backends-host.json:/etc/brnavi/backends-host.json:ro
+      - ./docker/gateway-entrypoint.sh:/usr/local/bin/gateway-entrypoint.sh:ro
+      - ${BRNAVI_TLS_DIR:-/home/victor/.ssh/brnavi-tls}:/run/certificate-source:ro
+    tmpfs:
+      - /run/brnavi-tls
+
+volumes:
+  rabbitmq-data:

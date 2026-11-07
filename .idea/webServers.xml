@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="a6f2d89e-5a6c-4a12-a5bb-95c216880141" name="Mobilespace" url="https://mobilespace.app">
+        <fileTransfer accessType="SFTP" host="95.216.88.141" port="22" privateKey="$USER_HOME$/.ssh/id_rsa" rootFolder="/home/victor" username="victor" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

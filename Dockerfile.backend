@@ -1,0 +1,23 @@
+FROM rust:bookworm AS build
+
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates clang cmake git libclang-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --locked --release
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 netcat-openbsd openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home brnavi
+
+COPY --from=build /app/target/release/brnavi /usr/local/bin/brnavi
+COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
+RUN chmod 0555 /usr/local/bin/backend-entrypoint.sh
+
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/backend-entrypoint.sh"]

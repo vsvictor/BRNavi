@@ -1,0 +1,122 @@
+services:
+  auth-db:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: brnavi-admin
+      MONGO_INITDB_ROOT_PASSWORD: ${AUTH_DB_ROOT_PASSWORD:?Run sh docker/init-auth-env.sh first}
+      MONGO_INITDB_DATABASE: brnavi_auth
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
+    volumes:
+      - auth-mongo-data:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/brnavi.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "const auth = db.getSiblingDB('brnavi_auth'); if (auth.auth('brnavi', process.env.AUTH_DB_PASSWORD).ok !== 1) quit(1); if (auth.runCommand({ping: 1}).ok !== 1) quit(1);"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  backend-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      BACKEND_BIND: 0.0.0.0
+      BACKEND_ID: brnavi-backend-1
+      BACKEND_TCP_PORT: 8081
+      BACKEND_UDP_PORT: 8081
+      RUST_LOG: ${LOG_LEVEL:-info}
+      AUTH_DB_HOST: mongodb://brnavi@auth-db:27017/?authSource=brnavi_auth
+      AUTH_DB_NAME: brnavi_auth
+      AUTH_DB_USER: brnavi
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
+      AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
+      PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 \"$${BACKEND_TCP_PORT}\""]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  backend-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      BACKEND_BIND: 0.0.0.0
+      BACKEND_ID: brnavi-backend-2
+      BACKEND_TCP_PORT: 8081
+      BACKEND_UDP_PORT: 8081
+      RUST_LOG: ${LOG_LEVEL:-info}
+      AUTH_DB_HOST: mongodb://brnavi@auth-db:27017/?authSource=brnavi_auth
+      AUTH_DB_NAME: brnavi_auth
+      AUTH_DB_USER: brnavi
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
+      AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
+      PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 \"$${BACKEND_TCP_PORT}\""]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+    environment:
+      GATEWAY_BIND: 0.0.0.0
+      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
+      CONTROL_PORT: 8500
+      BACKEND_CONFIG_PATH: /etc/brnavi/backends.json
+      GATEWAY_BACKEND_STATE_PATH: /var/lib/json-rpc-gateway/backends.json
+      GATEWAY_TRANSPORT_STATE_PATH: /var/lib/json-rpc-gateway/transports.json
+      METRICS_BIND: 0.0.0.0
+      METRICS_PORT: 9090
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${GATEWAY_PUBLISH_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8443}:${GATEWAY_PORT:-8443}/tcp"
+      - "${GATEWAY_PUBLISH_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8443}:${GATEWAY_PORT:-8443}/udp"
+    volumes:
+      - ./backends.json:/etc/brnavi/backends.json:ro
+      - gateway-state:/var/lib/json-rpc-gateway
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  gateway-state:
+  auth-mongo-data:

@@ -1,0 +1,24 @@
+FROM rust:bookworm AS build
+
+ARG GATEWAY_COMMIT=53d70f8ede40829800f2f07a72725ce089f2207c
+WORKDIR /src
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates clang cmake git libclang-dev libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --filter=blob:none --no-checkout https://github.com/vsvictor/JSON-RPC-2-GATEWAY.git gateway \
+    && git -C gateway checkout --detach "${GATEWAY_COMMIT}"
+WORKDIR /src/gateway
+RUN scripts/build-with-srt.sh build --locked --release -p json-rpc-gateway --bin json-rpc-gateway --features srt
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libssl3 libstdc++6 util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home gateway \
+    && mkdir -p /var/lib/json-rpc-gateway \
+    && chown gateway:gateway /var/lib/json-rpc-gateway
+
+COPY --from=build /src/gateway/target/release/json-rpc-gateway /usr/local/bin/json-rpc-gateway
+COPY docker/gateway-entrypoint.sh /usr/local/bin/gateway-entrypoint.sh
+RUN chmod 0555 /usr/local/bin/gateway-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/gateway-entrypoint.sh"]

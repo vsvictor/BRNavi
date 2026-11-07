@@ -1,0 +1,19 @@
+[Unit]
+Description=BRNavi JSON-RPC gateway and backend stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/victor/brnavi
+ExecStartPre=/bin/sh /home/victor/brnavi/docker/brnavi-firewall.sh
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --wait --wait-timeout 120
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.tls.yml stop
+ExecReload=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.tls.yml restart
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

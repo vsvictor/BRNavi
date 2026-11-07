@@ -1,0 +1,11 @@
+.git
+.idea
+target
+**/target
+.env
+.env.*
+!.env.example
+certs/
+*.crt
+*.key
+*.pem

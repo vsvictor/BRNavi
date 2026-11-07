@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="95.216.88.141" id="2e6eb7af-fac4-4c9d-8a3d-57cf16ea4fdb" keyPath="$PROJECT_DIR$/../.ssh/id_rsa" port="22" customName="Mobilespace" nameFormat="CUSTOM" useOpenSSHConfig="true">
+        <option name="customName" value="Mobilespace" />
+      </sshConfig>
+    </configs>
+  </component>
+</project>

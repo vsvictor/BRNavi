@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="Mobilespace">
+    <serverData>
+      <paths name="Mobilespace">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/victor/brnavi/Cargo.toml" local="$PROJECT_DIR$/Cargo.toml" web="" />
+            <mapping deploy="/home/victor/brnavi/Cargo.lock" local="$PROJECT_DIR$/Cargo.lock" web="" />
+            <mapping deploy="/home/victor/brnavi/src" local="$PROJECT_DIR$/src" web="" />
+            <mapping deploy="/home/victor/brnavi/Dockerfile.backend" local="$PROJECT_DIR$/Dockerfile.backend" web="" />
+            <mapping deploy="/home/victor/brnavi/Dockerfile.gateway" local="$PROJECT_DIR$/Dockerfile.gateway" web="" />
+            <mapping deploy="/home/victor/brnavi/docker-compose.yml" local="$PROJECT_DIR$/docker-compose.yml" web="" />
+            <mapping deploy="/home/victor/brnavi/backends.json" local="$PROJECT_DIR$/backends.json" web="" />
+            <mapping deploy="/home/victor/brnavi/backends-host.json" local="$PROJECT_DIR$/backends-host.json" web="" />
+            <mapping deploy="/home/victor/brnavi/docker" local="$PROJECT_DIR$/docker" web="" />
+            <mapping deploy="/home/victor/brnavi/.dockerignore" local="$PROJECT_DIR$/.dockerignore" web="" />
+            <mapping deploy="/home/victor/brnavi/.env.example" local="$PROJECT_DIR$/.env.example" web="" />
+            <mapping deploy="/home/victor/brnavi/README.md" local="$PROJECT_DIR$/README.md" web="" />
+            <mapping deploy="/home/victor/.ssh/brnavi-tls/mobilespace_app.pem" local="$USER_HOME$/Certs/mobilespace.app/mobilespace_app.pem" web="" />
+            <mapping deploy="/home/victor/.ssh/brnavi-tls/mobilespace_app_bundle.pem" local="$USER_HOME$/Certs/mobilespace.app/mobilespace_app_bundle.pem" web="" />
+            <mapping deploy="/home/victor/.ssh/brnavi-tls/mobilespace_app_key.pem" local="$USER_HOME$/Certs/mobilespace.app/mobilespace_app_key.pem" web="" />
+            <mapping deploy="/home/victor/brnavi/docker-compose.tls.yml" local="$PROJECT_DIR$/docker-compose.tls.yml" web="" />
+            <mapping deploy="/home/victor/brnavi/docker/brnavi.service" local="$PROJECT_DIR$/docker/brnavi.service" web="" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
