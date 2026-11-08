@@ -7,15 +7,16 @@ edition = "2024"
 anyhow = "1"
 argon2 = "0.5"
 chrono = "0.4"
-json-rpc-2-backend = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "2c7ede5c8f2fb5d3c26cbd3b92678764a4d0f381", features = ["message-logging"] }
-json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "8b9d6372a80708389c6d4a314879e69bf966a67c", default-features = false, features = ["mongodb", "annotations"] }
+json-rpc-2-backend = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "e57a725556900decf3275fe8d54158fc077c631a", features = ["message-logging"] }
+json-rpc-2-callback = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "e57a725556900decf3275fe8d54158fc077c631a" }
+json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "c4c6bdf48fc60704aacf1809f0085f5813b90a58", default-features = false, features = ["mongodb", "annotations"] }
 mongodb = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "8b9d6372a80708389c6d4a314879e69bf966a67c", default-features = false, features = ["sqlite"] }
+json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "c4c6bdf48fc60704aacf1809f0085f5813b90a58", default-features = false, features = ["sqlite"] }
 pasetors = "0.8"
 tempfile = "3"
 

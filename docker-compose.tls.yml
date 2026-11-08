@@ -2,10 +2,18 @@ services:
   backend-1:
     ports:
       - "127.0.0.1:18081:8081/tcp"
+    environment:
+      GATEWAY_CONTROL_ADDR: host.docker.internal:8500
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   backend-2:
     ports:
       - "127.0.0.1:18082:8081/tcp"
+    environment:
+      GATEWAY_CONTROL_ADDR: host.docker.internal:8500
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mqtt-broker:
     image: eclipse-mosquitto:2

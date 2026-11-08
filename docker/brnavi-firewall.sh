@@ -15,6 +15,7 @@ table inet brnavi_guard {
     chain input {
         type filter hook input priority -10; policy accept;
         iifname "lo" accept
+        iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 8500 accept
         tcp dport 8500 drop
         tcp dport { 8443, 8883, 5671 } accept
         udp dport 8443 accept

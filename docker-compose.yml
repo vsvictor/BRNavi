@@ -32,6 +32,7 @@ services:
       AUTH_DB_USER: brnavi
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
       AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
+      GATEWAY_CONTROL_ADDR: gateway:8500
       PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
     depends_on:
       auth-db:
@@ -67,6 +68,7 @@ services:
       AUTH_DB_USER: brnavi
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
       AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
+      GATEWAY_CONTROL_ADDR: gateway:8500
       PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
     depends_on:
       auth-db:

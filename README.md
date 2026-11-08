@@ -179,7 +179,12 @@ those brokers require the generated username/password in `.env`. Their
 unencrypted gateway-to-broker connections are bound to loopback only. Plain
 TCP and UDP transports are enabled on the shared `8443` port as requested, so
 clients may use unencrypted protocols there as well as TLS/QUIC. The deployment
-firewall rule blocks the gateway Control Plane on TCP `8500`.
+firewall rule blocks the gateway Control Plane on TCP `8500`, except from Docker
+bridge networks (`br-*`, 172.16.0.0/12): the gateway runs in host network mode,
+so backends reach it at `host.docker.internal:8500` (`GATEWAY_CONTROL_ADDR` with
+`extra_hosts: host-gateway`) to register callback clients. The rule
+is persistent: `brnavi.service` runs `docker/brnavi-firewall.sh` (`ExecStartPre`)
+on every boot and restart.
 Use `sudo systemctl status brnavi`, `sudo systemctl restart brnavi`, or
 `sudo journalctl -u brnavi -f` to manage it. Docker's restart policies also
 bring containers back after a Docker daemon or server restart. At
@@ -418,7 +423,11 @@ sh docker/deploy-with-tls.sh
 Незашифровані з'єднання від шлюзу до брокерів доступні лише через loopback.
 Звичайні TCP і UDP також увімкнені на спільному порту `8443`, тому клієнти
 можуть використовувати незашифровані протоколи поряд із TLS/QUIC. Firewall
-блокує Control Plane шлюзу на TCP `8500`.
+блокує Control Plane шлюзу на TCP `8500`, окрім Docker-мостів (`br-*`,
+172.16.0.0/12): шлюз працює в host-режимі мережі, тож backend-и звертаються до нього за
+`host.docker.internal:8500` (`GATEWAY_CONTROL_ADDR` з `extra_hosts: host-gateway`), щоб
+реєструвати callback-клієнтів. Правило постійне: `brnavi.service` виконує
+`docker/brnavi-firewall.sh` (`ExecStartPre`) при кожному завантаженні та перезапуску.
 Керування:
 `sudo systemctl status brnavi`, `sudo systemctl restart brnavi` або
 `sudo journalctl -u brnavi -f`. Політики перезапуску Docker також піднімуть
