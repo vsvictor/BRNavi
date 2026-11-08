@@ -33,6 +33,12 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
       AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
       GATEWAY_CONTROL_ADDR: gateway:8500
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      RESET_TOKEN_PUSH: ${RESET_TOKEN_PUSH:-0}
       PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
     depends_on:
       auth-db:
@@ -69,6 +75,12 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?Run sh docker/init-auth-env.sh first}
       AUTH_ISSUER: ${AUTH_ISSUER:-brnavi}
       GATEWAY_CONTROL_ADDR: gateway:8500
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      RESET_TOKEN_PUSH: ${RESET_TOKEN_PUSH:-0}
       PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Run sh docker/init-auth-env.sh first}
     depends_on:
       auth-db:

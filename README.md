@@ -228,6 +228,14 @@ implementation. The gateway healthcheck queries `list_transports` on its
 loopback Control Plane; systemd startup waits for all services to be ready
 instead of reporting success when gateway initialization fails.
 
+### Password-reset e-mail
+
+Reset tokens are e-mailed to the account address (`src/mail.rs`, SMTP STARTTLS).
+Set `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD` and
+`SMTP_FROM` in the ignored `.env` (see `.env.example`); never commit the password.
+Without `SMTP_HOST` the token is pushed to the user's other signed-in device
+(callback mechanism); `RESET_TOKEN_PUSH=1` keeps that push alongside e-mail.
+
 ### RustRover SFTP profile
 
 The project includes a manual SFTP deployment profile under `.idea`. In
@@ -472,6 +480,14 @@ WS-варіанти передають upstream frame envelope у повідом
 Healthcheck шлюзу запитує `list_transports` через loopback Control Plane;
 systemd очікує готовності всіх сервісів замість повідомлення про успішний
 старт, якщо ініціалізація шлюзу завершується помилкою.
+
+### Лист відновлення пароля
+
+Токен відновлення надсилається листом на адресу акаунта (`src/mail.rs`, SMTP STARTTLS).
+Задайте `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD` та
+`SMTP_FROM` у виключеному з Git `.env` (див. `.env.example`); пароль не комітьте.
+Без `SMTP_HOST` токен надходить push-ом на інший авторизований пристрій користувача
+(механізм callback); `RESET_TOKEN_PUSH=1` зберігає цей push разом із листом.
 
 ### Профіль SFTP у RustRover
 

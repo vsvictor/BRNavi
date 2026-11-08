@@ -34,6 +34,7 @@ async fn notifier_without_control_plane_is_a_no_op() {
     notifier(PasswordResetNotice {
         email: "a@b.c".into(),
         reset_token: "secret".into(),
+        reset_code: "000000".into(),
         user_id: "u1".into(),
     });
 }
