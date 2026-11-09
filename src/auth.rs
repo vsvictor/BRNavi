@@ -29,6 +29,7 @@ pub fn plugin_from_env() -> anyhow::Result<AuthPlugin<MongoAuthServer>> {
         ("first_name".to_owned(), ProfileFieldType::Text),
         ("last_name".to_owned(), ProfileFieldType::Text),
         ("middle_name".to_owned(), ProfileFieldType::Text),
+        ("account_type".to_owned(), ProfileFieldType::Text),
         ("birth_date".to_owned(), ProfileFieldType::DateTime),
         (
             "notifications_enabled".to_owned(),

@@ -407,6 +407,9 @@ fn parse_profile(values: HashMap<String, String>) -> Result<Document, RpcError> 
     for (name, value) in values {
         let field = match name.as_str() {
             "first_name" | "last_name" | "middle_name" => Bson::String(value),
+            "account_type" if matches!(value.as_str(), "private" | "corporate") => {
+                Bson::String(value)
+            }
             "birth_date" => {
                 let date = chrono::DateTime::parse_from_rfc3339(&value)
                     .map_err(|_| RpcError::invalid_params())?;

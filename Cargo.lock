@@ -1552,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "json-rpc-2-oauth2"
 version = "0.1.0"
-source = "git+https://github.com/vsvictor/JSON-RPC-2-OAuth2.git?rev=f14d377b95eb4b29325d5e72e371ce226ac9cc53#f14d377b95eb4b29325d5e72e371ce226ac9cc53"
+source = "git+https://github.com/vsvictor/JSON-RPC-2-OAuth2.git?rev=b978d98a147416a220293bd99afc51ca8b60d846#b978d98a147416a220293bd99afc51ca8b60d846"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1577,7 +1577,7 @@ dependencies = [
 [[package]]
 name = "json-rpc-2-oauth2-macros"
 version = "0.1.0"
-source = "git+https://github.com/vsvictor/JSON-RPC-2-OAuth2.git?rev=f14d377b95eb4b29325d5e72e371ce226ac9cc53#f14d377b95eb4b29325d5e72e371ce226ac9cc53"
+source = "git+https://github.com/vsvictor/JSON-RPC-2-OAuth2.git?rev=b978d98a147416a220293bd99afc51ca8b60d846#b978d98a147416a220293bd99afc51ca8b60d846"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

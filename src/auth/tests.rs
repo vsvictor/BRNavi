@@ -39,7 +39,7 @@ where
     let user = call(
         &first,
         "auth.register",
-        json!({"email": "mobile@example.test", "password": "integration-test-password", "profile": {}}),
+        json!({"email": "mobile@example.test", "password": "integration-test-password", "profile": {"first_name": "Mobile", "last_name": "User", "account_type": "private"}}),
     )
     .await;
     assert!(user.get("error").is_none(), "{user}");
@@ -63,7 +63,10 @@ where
         .await;
         assert_eq!(profile["result"]["id"], user_id);
         assert_eq!(profile["result"]["email"], "mobile@example.test");
-        assert_eq!(profile["result"]["profile"], json!({}));
+        assert_eq!(
+            profile["result"]["profile"],
+            json!({"first_name": "Mobile", "last_name": "User", "account_type": "private"})
+        );
         assert!(profile["result"].get("password_hash").is_none());
         assert_eq!(
             call(rpc, "auth.getProfile", json!({})).await["error"]["code"],
