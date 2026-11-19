@@ -1,0 +1,23 @@
+[Unit]
+Description=BRNavi backend instance %i
+Requires=mongod.service
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brnavi
+Group=brnavi
+EnvironmentFile=/etc/brnavi/backend.env
+RuntimeDirectory=brnavi-backend-%i
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/libexec/brnavi-backend-entrypoint %i
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

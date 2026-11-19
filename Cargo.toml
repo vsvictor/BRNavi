@@ -6,18 +6,23 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 argon2 = "0.5"
+async-trait = "0.1"
 chrono = "0.4"
-json-rpc-2-backend = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "e57a725556900decf3275fe8d54158fc077c631a", features = ["message-logging"] }
+hex = "0.4"
+json-rpc-2-backend = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "af8d04dbbaee05fa1514caa07a37808d5973d100" }
 json-rpc-2-callback = { git = "https://github.com/vsvictor/JSON-RPC-2.git", rev = "e57a725556900decf3275fe8d54158fc077c631a" }
-json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "b978d98a147416a220293bd99afc51ca8b60d846", default-features = false, features = ["mongodb", "annotations"] }
+json-rpc-2-car = { git = "https://github.com/vsvictor/JSON-RTC-2-Car", rev = "afe7e8a" }
+json-rpc-2-coopnav = { git = "https://github.com/vsvictor/ExServerTracker.git", rev = "7c8edcff1d355b2464c264986afaaf3ffae0c8f3", default-features = false }
+json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "1b0043f27cc445e9d238a643ab32fd45e143ea6e", default-features = false, features = ["mongodb", "annotations", "oauth-google"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 mongodb = "3"
+rand = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "b978d98a147416a220293bd99afc51ca8b60d846", default-features = false, features = ["sqlite"] }
+json-rpc-2-oauth2 = { git = "https://github.com/vsvictor/JSON-RPC-2-OAuth2.git", rev = "1b0043f27cc445e9d238a643ab32fd45e143ea6e", default-features = false, features = ["sqlite"] }
 pasetors = "0.8"
 tempfile = "3"
 

@@ -65,7 +65,8 @@ where
         assert_eq!(profile["result"]["email"], "mobile@example.test");
         assert_eq!(
             profile["result"]["profile"],
-            json!({"first_name": "Mobile", "last_name": "User", "account_type": "private"})
+            json!({"first_name": "Mobile", "last_name": "User", "account_type": "private",
+                "contacts": [{"type": "email", "value": "mobile@example.test"}]})
         );
         assert!(profile["result"].get("password_hash").is_none());
         assert_eq!(
@@ -85,6 +86,31 @@ where
         assert_eq!(me["result"]["permissions"], json!([]));
         assert!(me["result"].get("access_token").is_none());
     }
+    let contacts = json!([
+        {"type":"email","value":"public-contact@example.invalid"},
+        {"type":"telegram","value":"@example_contact"}
+    ]);
+    let updated = call(
+        &first,
+        "auth.updateProfile",
+        json!({"access_token": token, "profile": {"contacts": contacts}}),
+    )
+    .await;
+    assert_eq!(updated["result"]["profile"]["contacts"], contacts);
+    assert_eq!(updated["result"]["email"], "mobile@example.test");
+    let reloaded = call(&second, "auth.getProfile", json!({"access_token":token})).await;
+    assert_eq!(reloaded["result"]["profile"]["contacts"], contacts);
+    let cleared = call(
+        &second,
+        "auth.updateProfile",
+        json!({"access_token":token, "profile":{"contacts":[]}}),
+    )
+    .await;
+    assert_eq!(cleared["result"]["profile"]["contacts"], json!([]));
+    assert_eq!(
+        call(&first, "auth.getProfile", json!({"access_token":token})).await["result"]["profile"]["contacts"],
+        json!([])
+    );
     let me = call(
         &first,
         "navi.me",

@@ -17,6 +17,12 @@ fi
 if ! grep -q '^AUTH_DB_ROOT_PASSWORD=.' .env; then
     printf '\nAUTH_DB_ROOT_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
 fi
+if ! grep -q '^BRNAVI_BROKER_PASSWORD=.' .env; then
+    printf '\nBRNAVI_BROKER_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
+fi
+if ! grep -q '^GATEWAY_SRT_PASSPHRASE=.' .env; then
+    printf '\nGATEWAY_SRT_PASSPHRASE=%s\n' "$(openssl rand -hex 32)" >> .env
+fi
 if ! grep -q '^PASETO_LOCAL_KEY=.' .env; then
     key=$(openssl rand -base64 32)
     key=$(printf '%s' "$key" | tr '+/' '-_' | tr -d '=\n')

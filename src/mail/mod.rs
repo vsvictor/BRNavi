@@ -45,7 +45,10 @@ impl MailConfig {
 
 /// Builds the bilingual reset message. The six-digit code is only part of the body.
 pub fn reset_message(from: &Mailbox, notice: &PasswordResetNotice) -> Result<Message> {
-    let to: Mailbox = notice.email.parse().context("recipient is not a valid mailbox")?;
+    let to: Mailbox = notice
+        .email
+        .parse()
+        .context("recipient is not a valid mailbox")?;
     let body = format!(
         "Для вашого акаунта запросили відновлення пароля. Шестизначний код для введення в застосунку XRNavi (дійсний 10–15 хвилин):\n\n\
          {code}\n\n\
@@ -74,7 +77,10 @@ pub fn reset_notifier(config: MailConfig) -> Result<PasswordResetNotifier> {
     let transport = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host)
         .context("invalid SMTP host")?
         .port(config.port)
-        .credentials(Credentials::new(config.username.clone(), config.password.clone()))
+        .credentials(Credentials::new(
+            config.username.clone(),
+            config.password.clone(),
+        ))
         .authentication(vec![Mechanism::Login, Mechanism::Plain])
         .hello_name(ClientId::Domain("api.mobilespace.app".to_string()))
         .build();

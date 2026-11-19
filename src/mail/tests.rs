@@ -14,7 +14,9 @@ fn notice() -> PasswordResetNotice {
 fn message_is_addressed_and_contains_code() {
     let from: Mailbox = "XRNavi <admin@example.com>".parse().unwrap();
     let message = reset_message(&from, &notice()).unwrap();
-    let raw = String::from_utf8(message.formatted()).unwrap().replace("=\r\n", "");
+    let raw = String::from_utf8(message.formatted())
+        .unwrap()
+        .replace("=\r\n", "");
     assert!(raw.contains("user@example.com"));
     assert!(raw.contains("admin@example.com"));
     assert!(raw.contains("123456"));

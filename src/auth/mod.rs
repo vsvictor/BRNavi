@@ -30,6 +30,7 @@ pub fn plugin_from_env() -> anyhow::Result<AuthPlugin<MongoAuthServer>> {
         ("last_name".to_owned(), ProfileFieldType::Text),
         ("middle_name".to_owned(), ProfileFieldType::Text),
         ("account_type".to_owned(), ProfileFieldType::Text),
+        ("contacts".to_owned(), ProfileFieldType::Contacts),
         ("birth_date".to_owned(), ProfileFieldType::DateTime),
         (
             "notifications_enabled".to_owned(),
@@ -44,6 +45,16 @@ where
     S: JsonRpcAuthServer<StorageError = AuthError> + Clone + 'static,
 {
     auth.register(rpc, "navi.me", me)?;
+    let google_client_ids: Vec<String> = std::env::var("GOOGLE_CLIENT_IDS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if !google_client_ids.is_empty() {
+        auth.register_google_login(rpc, google_client_ids)?;
+    }
     Ok(())
 }
 

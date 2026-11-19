@@ -1,0 +1,27 @@
+[Unit]
+Description=BRNavi JSON-RPC gateway
+Requires=brnavi-backend@1.service brnavi-backend@2.service mongod.service mosquitto.service rabbitmq-server.service
+After=network-online.target brnavi-backend@1.service brnavi-backend@2.service mongod.service mosquitto.service rabbitmq-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brnavi-gateway
+Group=brnavi-gateway
+EnvironmentFile=/etc/brnavi/gateway.env
+RuntimeDirectory=brnavi-gateway
+RuntimeDirectoryMode=0750
+ExecStartPre=+/usr/local/libexec/brnavi-firewall
+ExecStartPre=+/usr/local/libexec/brnavi-prepare-gateway-tls
+ExecStart=/usr/local/libexec/brnavi-gateway-entrypoint
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/json-rpc-gateway
+
+[Install]
+WantedBy=multi-user.target
+Alias=brnavi.service
