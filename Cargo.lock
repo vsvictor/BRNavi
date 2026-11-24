@@ -212,6 +212,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "backon"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
+dependencies = [
+ "fastrand",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -308,6 +317,7 @@ dependencies = [
  "json-rpc-2-car",
  "json-rpc-2-coopnav",
  "json-rpc-2-oauth2",
+ "json-rpc-2-server",
  "lettre",
  "mongodb",
  "pasetors",
@@ -463,7 +473,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4356eba6976435498d05a311ee9fc486da3bc81c200d3f0d7dd9703b41913f92"
 dependencies = [
  "bytes",
+ "futures-core",
  "memchr",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1699,7 +1713,7 @@ dependencies = [
 [[package]]
 name = "json-rpc-2-coopnav"
 version = "1.0.0"
-source = "git+https://github.com/vsvictor/ExServerTracker.git?rev=7c8edcff1d355b2464c264986afaaf3ffae0c8f3#7c8edcff1d355b2464c264986afaaf3ffae0c8f3"
+source = "git+https://github.com/vsvictor/ExServerTracker.git?rev=5182cca0ad45c8df31f82669bebe62bbb3b5e0dc#5182cca0ad45c8df31f82669bebe62bbb3b5e0dc"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1709,6 +1723,7 @@ dependencies = [
  "json-rpc-2-server",
  "prost",
  "rand 0.9.5",
+ "redis",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2764,6 +2779,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis"
+version = "0.32.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
+dependencies = [
+ "arc-swap",
+ "backon",
+ "bytes",
+ "cfg-if",
+ "combine",
+ "futures-channel",
+ "futures-util",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "pin-project-lite",
+ "ryu",
+ "sha1_smol",
+ "socket2",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3290,6 +3330,12 @@ dependencies = [
  "cpufeatures 0.3.1",
  "digest 0.11.3",
 ]
+
+[[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"

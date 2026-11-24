@@ -9,6 +9,8 @@ Type=simple
 User=brnavi
 Group=brnavi
 EnvironmentFile=/etc/brnavi/backend.env
+# Both instances read this file. Stage 2 stays off unless every unit sets the
+# same COOPNAV_STAGE2=true, COOPNAV_REDIS_URL, COOPNAV_EPOCH and COOPNAV_COOP_BRAND.
 RuntimeDirectory=brnavi-backend-%i
 RuntimeDirectoryMode=0700
 ExecStart=/usr/local/libexec/brnavi-backend-entrypoint %i

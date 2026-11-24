@@ -6,8 +6,9 @@
 //! which re-checks that the OAuth device session is still the current one.
 //!
 //! Namespace: personal tracking only. `driverId` is the verified token subject
-//! and `brandId` is `personal:<subject>`, so every user is an isolated partition
-//! and no fleet/brand membership is implied.
+//! and `brandId` is `personal:<subject>`. Mongo history stays in that partition.
+//! Stage 2 may publish donors into one shared index brand; the session brand
+//! returned to the client is not replaced.
 
 use std::{sync::Arc, time::Duration};
 
@@ -20,7 +21,9 @@ use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod stage2;
 mod storage;
+pub use stage2::{Stage2Env, stage2_from_env, stage2_from_vars};
 pub use storage::{
     MongoCoopNavStorage, MongoDeviceSessions, MongoTrackingGrants, MongoTrackingPermissions,
 };
@@ -28,10 +31,23 @@ pub use storage::{
 /// Same JSON-RPC code CoopNav uses for session authorization failures.
 const DENIED_CODE: i64 = -32011;
 const TRACKING_ROLE: &str = "system.xrnavi.tracking";
-const TRACKING_PERMISSIONS: [&str; 2] = [
+const STAGE1_TRACKING_PERMISSIONS: [&str; 2] = [
     json_rpc_2_coopnav::INGEST_PERMISSION,
     json_rpc_2_coopnav::SERVER_TIME_PERMISSION,
 ];
+const STAGE2_TRACKING_PERMISSIONS: [&str; 3] = [
+    json_rpc_2_coopnav::INGEST_PERMISSION,
+    json_rpc_2_coopnav::SERVER_TIME_PERMISSION,
+    json_rpc_2_coopnav::COOP_SYNC_PERMISSION,
+];
+
+pub fn tracking_permissions(stage2: bool) -> &'static [&'static str] {
+    if stage2 {
+        &STAGE2_TRACKING_PERMISSIONS
+    } else {
+        &STAGE1_TRACKING_PERMISSIONS
+    }
+}
 pub const PERSONAL_BRAND_PREFIX: &str = "personal:";
 /// Matches the default OAuth refresh-token lifetime used by `plugin_from_env`:
 /// a device session whose `last_seen` is older can no longer be refreshed.
@@ -241,6 +257,7 @@ pub fn register<S>(
     rpc: &RpcServer,
     service: TrackingService,
     permissions: Arc<dyn TrackingPermissions>,
+    allowlist: &'static [&'static str],
 ) -> anyhow::Result<()>
 where
     S: JsonRpcAuthServer<StorageError = AuthError> + Clone + 'static,
@@ -267,7 +284,7 @@ where
                         .map_err(|_| RpcError::internal_error())?;
                     // Role writes do not alter an already-issued token. Keep
                     // the plugin's actual permission check, including expiry.
-                    let refresh_required = match auth.authorize(params, &TRACKING_PERMISSIONS) {
+                    let refresh_required = match auth.authorize(params, allowlist) {
                         Ok(_) => false,
                         Err(error) if error.code == -32003 => true,
                         Err(error) => return Err(error),
@@ -302,7 +319,7 @@ where
 fn open_schema() -> Value {
     json!({
         "type": "object",
-        "description": "Opens personal tracking and provisions the owner's tracking role. Optional result.refreshRequired=true requires auth.refresh and replacing the token pair before ingest/serverTime. The tracking session remains valid; no repeat open is needed.",
+        "description": "Opens personal tracking and provisions the owner's tracking role. Optional result.refreshRequired=true requires auth.refresh and replacing the token pair before a tracking method the token does not permit. tracking.ingest still requires only tracking.ingest. The tracking session remains valid; no repeat open is needed.",
         "additionalProperties": false,
         "required": ["deviceId"],
         "properties": {

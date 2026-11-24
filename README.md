@@ -243,9 +243,10 @@ Live-перевірка успішна на окремому MongoDB проце�
 ### Login tracking (CoopNav)
 
 The backend installs the [ExServerTracker](../ExServerTracker) `CoopNavPlugin`
-(stage 1 only; stages 2/3 and cooperative positioning stay disabled) and
-exposes a host method that bridges the login device identity to a tracking
-session. No new device ID is created: the `deviceId` the client already sends
+and exposes a host method that bridges the login device identity to a tracking
+session. Stage 2 is off unless `COOPNAV_STAGE2=true` on both backend units with
+the same `COOPNAV_EPOCH`, `COOPNAV_COOP_BRAND` and `COOPNAV_REDIS_URL`. Stage 3
+stays disabled. No new device ID is created: the `deviceId` the client already sends
 to `auth.login`/`auth.loginWithGoogle` becomes the tracker ID.
 
 `tracking.open` — params `{access_token | authorization: "Bearer …", deviceId}`
@@ -274,19 +275,22 @@ Storage (auth database): `tracking_sessions` (`_id: {subject, device_id,
 auth_sid}`, unique `session_id`, index created at startup) and
 `tracker_points` (`_id: {brand_id, driver_id, point_id}`; duplicate identical
 points are idempotent, different payloads with the same ID are conflicts).
-Redis is not needed.
+Redis is not opened while `COOPNAV_STAGE2` is false. With the flag on, both
+units share one local Redis donor index (`coopnav:v1`); Mongo history stays
+`personal:<subject>`.
 
 Automatic permissions and client retry:
-- Startup creates the reserved `system.xrnavi.tracking` role in the existing
-  OAuth `roles` collection with **only** `tracking.ingest` and
-  `tracking.server_time`. `tracking.open` uses the verified subject's ObjectId
+- Startup writes the reserved `system.xrnavi.tracking` role in the existing
+  OAuth `roles` collection to exactly `tracking.ingest` and
+  `tracking.server_time`, plus `coop.sync_peers` when `COOPNAV_STAGE2=true`.
+  `tracking.open` uses the verified subject's ObjectId
   to `$addToSet` this role in `users.roles`; other roles are preserved. No
-  migration, client-selected role/user, wildcard, or permission bypass is used.
+  client-selected role/user, wildcard, or permission bypass is used.
   New users and existing users are provisioned lazily on their first valid open.
-- Existing access tokens are immutable. If either permission is absent,
+- Existing access tokens are immutable. If any permission of the current list is absent,
   `tracking.open` provisions the role and returns the successful four-field
   result above with optional **`"refreshRequired": true`**. The field is omitted
-  when the token already has both permissions. When true, call
+  when the token already has the current list. When true, call
   **`auth.refresh {refresh_token}`** once (client: `SessionManager.refreshNow()`),
   securely replace **both** `access_token` and `refresh_token` from its result,
   then start ingest/serverTime with the **same tracking session** and new access
@@ -654,9 +658,10 @@ MongoDB відокремлена від попередньої конфігур�
 ### Трекінг після входу (CoopNav)
 
 Бекенд встановлює `CoopNavPlugin` з [ExServerTracker](../ExServerTracker)
-(лише етап 1; етапи 2/3 і кооперативне позиціонування вимкнені) та додає
-хост-метод, що пов'язує пристрій входу з сесією трекінгу. Новий ID не
-створюється: `deviceId`, який клієнт уже надсилає в
+та додає хост-метод, що пов'язує пристрій входу з сесією трекінгу. Етап 2
+вимкнений, доки на обох юнітах не задано `COOPNAV_STAGE2=true` з однаковими
+`COOPNAV_EPOCH`, `COOPNAV_COOP_BRAND` і `COOPNAV_REDIS_URL`. Етап 3 лишається
+вимкненим. Новий ID не створюється: `deviceId`, який клієнт уже надсилає в
 `auth.login`/`auth.loginWithGoogle`, стає ID трекера.
 
 `tracking.open` — параметри `{access_token | authorization: "Bearer …", deviceId}`
@@ -683,19 +688,22 @@ MongoDB відокремлена від попередньої конфігур�
 Сховище (база автентифікації): `tracking_sessions` (`_id: {subject, device_id,
 auth_sid}`, унікальний `session_id`, індекс створюється під час запуску) і
 `tracker_points` (`_id: {brand_id, driver_id, point_id}`; повтор однакової
-точки ідемпотентний, інший вміст з тим самим ID — конфлікт). Redis не потрібен.
+точки ідемпотентний, інший вміст з тим самим ID — конфлікт). Поки
+`COOPNAV_STAGE2` дорівнює false, Redis не відкривається. За `true` обидва
+юніти ділять один локальний індекс донорів у Redis (`coopnav:v1`); історія
+Mongo лишається в `personal:<subject>`.
 
 Автоматичні дозволи й повтор клієнта:
-- Під час запуску створюється зарезервована роль `system.xrnavi.tracking`
-  у наявній OAuth-колекції `roles` **лише** з `tracking.ingest` і
-  `tracking.server_time`. `tracking.open` за ObjectId перевіреного власника
-  виконує `$addToSet` цієї ролі в `users.roles`, зберігаючи інші ролі.
-  Немає міграції, довільного user/role від клієнта, `*` чи обходу перевірок.
-  Нові й наявні користувачі отримують роль під час першого коректного open.
-- Виданий access token незмінний. Якщо бракує одного з дозволів,
+- Під час запуску роль `system.xrnavi.tracking` у наявній OAuth-колекції
+  `roles` записується рівно як `tracking.ingest` і `tracking.server_time`,
+  а за `COOPNAV_STAGE2=true` ще й `coop.sync_peers`. `tracking.open` за ObjectId
+  перевіреного власника виконує `$addToSet` цієї ролі в `users.roles`,
+  зберігаючи інші ролі. Немає довільного user/role від клієнта, `*` чи обходу
+  перевірок. Нові й наявні користувачі отримують роль під час першого коректного open.
+- Виданий access token незмінний. Якщо бракує дозволу з поточного списку,
   `tracking.open` призначає роль і повертає успішний результат із чотирма
   полями вище та optional **`"refreshRequired": true`**. Якщо токен уже має
-  обидва дозволи, це поле відсутнє. Коли true, один раз викличте
+  поточний список, це поле відсутнє. Коли true, один раз викличте
   **`auth.refresh {refresh_token}`** (клієнт: `SessionManager.refreshNow()`),
   безпечно замініть **обидва** токени з результату й запускайте
   ingest/serverTime з **тією самою tracking-сесією** та новим access token.

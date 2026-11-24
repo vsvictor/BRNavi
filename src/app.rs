@@ -1,8 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::{auth, callback, car::AuthorizedCar, garage, mail, tracking};
 use json_rpc_2_backend::{BackendBuilder, FromSettings};
-use json_rpc_2_coopnav::CoopNavPlugin;
+use json_rpc_2_coopnav::{
+    CoopNavPlugin,
+    cooperative::{CooperativeConfig, GtfsRealtimeSource, RedisCooperativeStorage, TransitSource},
+};
 
 fn reset_delivery(
     control: Option<json_rpc_2_callback::GatewayControl>,
@@ -30,19 +33,48 @@ pub async fn run() -> anyhow::Result<()> {
     let garage_store = garage::MongoGarage::new(admin_database.clone());
     let car_auth = auth.clone();
     let tracking_methods = auth.clone();
+    let stage2: Option<tracking::Stage2Env> = tracking::stage2_from_env()?;
     let tracking_grants = tracking::MongoTrackingGrants::new(&admin_database);
     tracking_grants.ensure_indexes().await?;
-    let tracking_permissions = Arc::new(tracking::MongoTrackingPermissions::new(&admin_database));
+    let tracking_permissions = Arc::new(tracking::MongoTrackingPermissions::new(
+        &admin_database,
+        stage2.is_some(),
+    ));
     tracking_permissions.initialize().await?;
     let tracking_service = tracking::TrackingService::new(
         Arc::new(tracking::MongoDeviceSessions::new(&admin_database)),
         Arc::new(tracking_grants),
     );
-    let tracker = CoopNavPlugin::new(
+    let mut tracker = CoopNavPlugin::new(
         auth.clone(),
         Arc::new(tracking::HostSessionAuthorizer(tracking_service.clone())),
         Arc::new(tracking::MongoCoopNavStorage::new(&admin_database)),
     );
+    if let Some(stage2) = stage2 {
+        let transit = stage2
+            .gtfs
+            .map(|config| {
+                GtfsRealtimeSource::new(config)
+                    .map(|source| Arc::new(source) as Arc<dyn TransitSource>)
+            })
+            .transpose()?;
+        let cooperative = CooperativeConfig::new(
+            Arc::new(
+                RedisCooperativeStorage::connect(&stage2.redis_url, "coopnav:v1")
+                    .await
+                    .map_err(|error| anyhow::anyhow!(error))?,
+            ),
+            transit,
+            Duration::from_secs(2),
+            Duration::from_millis(500),
+        )?
+        .with_shared_epoch(stage2.epoch)?
+        .with_shared_brand(stage2.brand)?;
+        tracker = tracker.with_cooperative(cooperative);
+        tracker.section(1, true).await?;
+        tracker.section(2, true).await?;
+    }
+    let allowlist = tracking::tracking_permissions(tracker.sections().section_enabled(2).await?);
     let backend = builder
         .default_instance_id("brnavi")
         .log_level("info")
@@ -56,6 +88,7 @@ pub async fn run() -> anyhow::Result<()> {
                 rpc,
                 tracking_service.clone(),
                 tracking_permissions.clone(),
+                allowlist,
             )?;
             Ok(())
         })

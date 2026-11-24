@@ -1,11 +1,13 @@
 use super::storage::{
     grant_from_document, grant_key, point_document, point_key, stored_point, tracking_role_is_safe,
+    tracking_role_write,
 };
 use super::*;
 use json_rpc_2_coopnav::{CoopNavPlugin, InMemoryCoopNavStorage, StoragePartition, TrackPoint};
 use json_rpc_2_oauth2::{
     JsonRpcAuthServer, LoginRequest, RegisterRequest, SqliteAuthServer, TokenConfig,
 };
+use json_rpc_2_server::{JsonRpcProtocol, TransportContext};
 use mongodb::bson::doc;
 use std::{
     collections::HashMap,
@@ -114,13 +116,17 @@ impl TrackingPermissions for TestPermissions {
 }
 
 async fn setup() -> Harness {
+    setup_with(tracking_permissions(false), tracking_permissions(false)).await
+}
+
+async fn setup_with(issued: &[&str], allowlist: &'static [&'static str]) -> Harness {
     let mut identity =
         SqliteAuthServer::new(TEST_KEY, TokenConfig::new("brnavi-tracking")).unwrap();
     identity.set_db_host(":memory:");
     identity.initialize_storage().await.unwrap();
-    for permission in TRACKING_PERMISSIONS {
+    for permission in issued {
         identity
-            .handle_add_permission(TRACKING_ROLE.into(), permission.into())
+            .handle_add_permission(TRACKING_ROLE.into(), (*permission).into())
             .await
             .unwrap();
     }
@@ -156,6 +162,14 @@ async fn setup() -> Harness {
         users.push((user.id, tokens.access_token));
         refresh_tokens.push(tokens.refresh_token);
     }
+    for permission in allowlist {
+        if !issued.contains(permission) {
+            identity
+                .handle_add_permission(TRACKING_ROLE.into(), (*permission).into())
+                .await
+                .unwrap();
+        }
+    }
 
     let sessions = Arc::new(FakeSessions::default());
     let grants = Arc::new(FakeGrants::default());
@@ -176,7 +190,14 @@ async fn setup() -> Harness {
     let auth = AuthPlugin::new(identity.clone());
     let server = RpcServer::new();
     json_rpc_2_oauth2::register_auth_methods(identity.clone(), &server).unwrap();
-    register(&auth, &server, service.clone(), permissions.clone()).unwrap();
+    register(
+        &auth,
+        &server,
+        service.clone(),
+        permissions.clone(),
+        allowlist,
+    )
+    .unwrap();
     CoopNavPlugin::new(
         auth,
         Arc::new(HostSessionAuthorizer(service)),
@@ -476,7 +497,10 @@ async fn existing_user_gets_only_tracking_permissions_after_standard_refresh() {
     .await;
     let token = refreshed["result"]["access_token"].as_str().unwrap();
     let claims = h.identity.authenticate_access_token(token).unwrap();
-    let mut expected = TRACKING_PERMISSIONS.map(str::to_owned).to_vec();
+    let mut expected = tracking_permissions(false)
+        .iter()
+        .map(|permission| (*permission).to_owned())
+        .collect::<Vec<_>>();
     expected.sort();
     assert_eq!(claims.permissions, expected);
     assert_eq!(opened["driverId"], carol);
@@ -630,31 +654,267 @@ async fn denied_open_never_provisions_and_provisioning_errors_fail_closed() {
 
 #[test]
 fn host_role_must_contain_exactly_the_tracking_allowlist() {
-    assert!(tracking_role_is_safe(&doc! {
-        "name": TRACKING_ROLE, "permissions": TRACKING_PERMISSIONS.to_vec(),
-    }));
-    assert!(tracking_role_is_safe(&doc! {
-        "name": TRACKING_ROLE,
-        "permissions": [TRACKING_PERMISSIONS[1], TRACKING_PERMISSIONS[0]],
-    }));
+    for allowlist in [tracking_permissions(false), tracking_permissions(true)] {
+        assert!(tracking_role_is_safe(
+            &doc! { "name": TRACKING_ROLE, "permissions": allowlist.to_vec() },
+            allowlist
+        ));
+        let mut reversed = allowlist.to_vec();
+        reversed.reverse();
+        assert!(tracking_role_is_safe(
+            &doc! { "name": TRACKING_ROLE, "permissions": reversed },
+            allowlist
+        ));
+        assert!(!tracking_role_is_safe(
+            &doc! { "name": TRACKING_ROLE, "permissions": allowlist.to_vec() },
+            if allowlist.len() == 2 {
+                tracking_permissions(true)
+            } else {
+                tracking_permissions(false)
+            }
+        ));
+        let write = tracking_role_write(allowlist);
+        assert!(write.get_document("$set").is_ok());
+        assert!(!write.contains_key("$setOnInsert"));
+        assert_eq!(
+            write
+                .get_document("$set")
+                .unwrap()
+                .get_array("permissions")
+                .unwrap()
+                .len(),
+            allowlist.len()
+        );
+    }
+    let stage1 = tracking_permissions(false);
     for permissions in [
         vec!["*"],
-        vec![TRACKING_PERMISSIONS[0]],
-        vec![TRACKING_PERMISSIONS[0], TRACKING_PERMISSIONS[0]],
-        vec![
-            TRACKING_PERMISSIONS[0],
-            TRACKING_PERMISSIONS[1],
-            "rbac.roles.write",
-        ],
+        vec![stage1[0]],
+        vec![stage1[0], stage1[0]],
+        vec![stage1[0], stage1[1], "rbac.roles.write"],
+        tracking_permissions(true).to_vec(),
     ] {
-        assert!(!tracking_role_is_safe(&doc! {
-            "name": TRACKING_ROLE, "permissions": permissions,
-        }));
+        assert!(!tracking_role_is_safe(
+            &doc! { "name": TRACKING_ROLE, "permissions": permissions },
+            stage1
+        ));
     }
-    assert!(!tracking_role_is_safe(&doc! {
-        "name": "other", "permissions": TRACKING_PERMISSIONS.to_vec(),
-    }));
-    assert!(!tracking_role_is_safe(&doc! { "name": TRACKING_ROLE }));
+    assert!(!tracking_role_is_safe(
+        &doc! { "name": "other", "permissions": stage1.to_vec() },
+        stage1
+    ));
+    assert!(!tracking_role_is_safe(
+        &doc! { "name": TRACKING_ROLE },
+        stage1
+    ));
+}
+
+#[tokio::test]
+async fn stage2_open_asks_for_refresh_until_coop_sync_is_on_the_token() {
+    let h = setup_with(tracking_permissions(false), tracking_permissions(true)).await;
+    let alice = h.users[0].0.clone();
+    h.sessions.login(&alice, DEVICE, "sid-a", NOW);
+    let opened = open(&h, 0, DEVICE).await;
+    assert!(opened.get("error").is_none(), "{opened}");
+    let result = opened["result"].clone();
+    assert_eq!(
+        result
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|key| key.as_str() != "refreshRequired")
+            .count(),
+        4
+    );
+    assert_eq!(result["refreshRequired"], true);
+    assert_eq!(result["brandId"], personal_brand(&alice));
+    let ingest = ingest_params(&h.users[0].1, &result, vec![point(&"c".repeat(32), 50.45)]);
+    assert_eq!(
+        call(&h.server, "tracking.ingest", ingest).await["result"]["acceptedIds"],
+        json!(["c".repeat(32)])
+    );
+    let stale = call_transport(
+        &h.server,
+        "coop.sync_peers",
+        json!({ "access_token": h.users[0].1 }),
+        Some("quic"),
+    )
+    .await;
+    assert_eq!(error_code(&stale), -32003);
+    assert_eq!(
+        error_code(
+            &call_transport(
+                &h.server,
+                "coop.sync_peers",
+                json!({ "access_token": h.users[0].1 }),
+                Some("tcp"),
+            )
+            .await
+        ),
+        -32014
+    );
+
+    let refreshed = call(
+        &h.server,
+        "auth.refresh",
+        json!({ "refresh_token": h.refresh_tokens[0] }),
+    )
+    .await;
+    let token = refreshed["result"]["access_token"].as_str().unwrap();
+    let mut expected = tracking_permissions(true)
+        .iter()
+        .map(|permission| (*permission).to_owned())
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(
+        h.identity
+            .authenticate_access_token(token)
+            .unwrap()
+            .permissions,
+        expected
+    );
+    let again = call(
+        &h.server,
+        "tracking.open",
+        json!({ "access_token": token, "deviceId": DEVICE }),
+    )
+    .await["result"]
+        .clone();
+    assert!(again.get("refreshRequired").is_none());
+    assert_eq!(again["sessionId"], result["sessionId"]);
+    let permitted = call_transport(
+        &h.server,
+        "coop.sync_peers",
+        json!({ "access_token": token }),
+        Some("quic"),
+    )
+    .await;
+    assert_ne!(error_code(&permitted), -32003);
+    assert_eq!(
+        error_code(
+            &call_transport(
+                &h.server,
+                "coop.sync_peers",
+                json!({ "access_token": token }),
+                None,
+            )
+            .await
+        ),
+        -32014
+    );
+}
+
+async fn call_transport(
+    server: &RpcServer,
+    method: &str,
+    params: Value,
+    transport: Option<&str>,
+) -> Value {
+    let bytes = serde_json::to_vec(&json!({
+        "jsonrpc": "2.0", "id": 1, "method": method, "params": params,
+    }))
+    .unwrap();
+    let response = match transport {
+        Some(transport) => {
+            let context = TransportContext {
+                transport: transport.into(),
+                connection_id: "conn-1".into(),
+                push_sender: None,
+            };
+            server
+                .handle_message_with_context(&bytes, &context)
+                .await
+                .unwrap()
+        }
+        None => server.handle_bytes(&bytes).await.unwrap(),
+    };
+    serde_json::from_slice(&response).unwrap()
+}
+
+#[test]
+fn stage2_env_stays_closed_until_the_flag_and_shared_index_are_set() {
+    let mut seen = Vec::new();
+    let disabled = stage2_from_vars(|name| {
+        seen.push(name.to_owned());
+        Ok(None)
+    })
+    .unwrap();
+    assert!(disabled.is_none());
+    assert_eq!(seen, ["COOPNAV_STAGE2"]);
+
+    let explicit = stage2_from_vars(|name| {
+        seen.push(name.to_owned());
+        Ok(Some("false".into()))
+    })
+    .unwrap();
+    assert!(explicit.is_none());
+    assert_eq!(seen, ["COOPNAV_STAGE2", "COOPNAV_STAGE2"]);
+
+    let missing_epoch = stage2_from_vars(|name| {
+        Ok(match name {
+            "COOPNAV_STAGE2" => Some("true".into()),
+            _ => None,
+        })
+    })
+    .unwrap_err();
+    assert!(missing_epoch.to_string().contains("COOPNAV_EPOCH"));
+
+    let configured = stage2_from_vars(|name| {
+        Ok(match name {
+            "COOPNAV_STAGE2" => Some("true".into()),
+            "COOPNAV_EPOCH" => Some("deploy-1".into()),
+            "COOPNAV_COOP_BRAND" => Some("city".into()),
+            "COOPNAV_REDIS_URL" => Some("redis://127.0.0.1:6379/".into()),
+            "COOPNAV_GTFS_URL" => Some("https://transit.example/gtfs".into()),
+            _ => None,
+        })
+    })
+    .unwrap()
+    .unwrap();
+    assert!(configured.gtfs.is_none());
+    assert_eq!(configured.epoch, "deploy-1");
+    assert_eq!(configured.brand, "city");
+
+    let feed = stage2_from_vars(|name| {
+        Ok(Some(
+            match name {
+                "COOPNAV_STAGE2" => "true",
+                "COOPNAV_EPOCH" => "deploy-1",
+                "COOPNAV_COOP_BRAND" => "city",
+                "COOPNAV_REDIS_URL" => "redis://127.0.0.1:6379/",
+                "COOPNAV_GTFS_URL" => "https://transit.example/gtfs",
+                "COOPNAV_GTFS_ROUTES" => "bus:12,trolleybus:3",
+                "COOPNAV_GTFS_ACCURACY_METERS" => "8",
+                "COOPNAV_GTFS_TRUST_SCORE" => "0.9",
+                _ => unreachable!(),
+            }
+            .into(),
+        ))
+    })
+    .unwrap()
+    .unwrap();
+    let gtfs = feed.gtfs.unwrap();
+    assert_eq!(gtfs.brand_id, "city");
+    assert_eq!(gtfs.route_classes.len(), 2);
+
+    let car = stage2_from_vars(|name| {
+        Ok(Some(
+            match name {
+                "COOPNAV_STAGE2" => "true",
+                "COOPNAV_EPOCH" => "deploy-1",
+                "COOPNAV_COOP_BRAND" => "city",
+                "COOPNAV_REDIS_URL" => "redis://127.0.0.1:6379/",
+                "COOPNAV_GTFS_URL" => "https://transit.example/gtfs",
+                "COOPNAV_GTFS_ROUTES" => "car:1",
+                "COOPNAV_GTFS_ACCURACY_METERS" => "8",
+                "COOPNAV_GTFS_TRUST_SCORE" => "0.9",
+                _ => unreachable!(),
+            }
+            .into(),
+        ))
+    })
+    .unwrap_err();
+    assert!(car.to_string().contains("bus and trolleybus"));
 }
 
 #[test]

@@ -12,8 +12,8 @@ use mongodb::{
 };
 
 use super::{
-    DeviceSession, DeviceSessions, StoreError, TRACKING_PERMISSIONS, TRACKING_ROLE, TrackingGrant,
-    TrackingGrants, TrackingPermissions,
+    DeviceSession, DeviceSessions, StoreError, TRACKING_ROLE, TrackingGrant, TrackingGrants,
+    TrackingPermissions, tracking_permissions,
 };
 
 /// Uses the OAuth `roles.permissions` / `users.roles` schema, just like the
@@ -21,13 +21,15 @@ use super::{
 pub struct MongoTrackingPermissions {
     roles: Collection<Document>,
     users: Collection<Document>,
+    permissions: &'static [&'static str],
 }
 
 impl MongoTrackingPermissions {
-    pub fn new(database: &Database) -> Self {
+    pub fn new(database: &Database, stage2: bool) -> Self {
         Self {
             roles: database.collection("roles"),
             users: database.collection("users"),
+            permissions: tracking_permissions(stage2),
         }
     }
 
@@ -44,7 +46,7 @@ impl MongoTrackingPermissions {
             .roles
             .update_one(
                 doc! { "name": TRACKING_ROLE },
-                doc! { "$setOnInsert": { "permissions": TRACKING_PERMISSIONS.to_vec() } },
+                tracking_role_write(self.permissions),
             )
             .upsert(true)
             .await
@@ -57,7 +59,8 @@ impl MongoTrackingPermissions {
             self.role_is_safe()
                 .await
                 .map_err(|_| { anyhow::anyhow!("Cannot verify the host tracking role") })?,
-            "The host tracking role must contain exactly the two tracking permissions"
+            "The host tracking role must contain exactly {:?}",
+            self.permissions
         );
         Ok(())
     }
@@ -68,18 +71,24 @@ impl MongoTrackingPermissions {
             .find_one(doc! { "name": TRACKING_ROLE })
             .await
             .map_err(|_| StoreError)?
-            .is_some_and(|role| tracking_role_is_safe(&role)))
+            .is_some_and(|role| tracking_role_is_safe(&role, self.permissions)))
     }
 }
 
-pub(super) fn tracking_role_is_safe(role: &Document) -> bool {
+/// Replaces the reserved role's permission list. `$set` updates an existing
+/// document, so switching `COOPNAV_STAGE2` rewrites this role and no other.
+pub(super) fn tracking_role_write(permissions: &[&str]) -> Document {
+    doc! { "$set": { "permissions": permissions.to_vec() } }
+}
+
+pub(super) fn tracking_role_is_safe(role: &Document, permissions: &[&str]) -> bool {
     role.get_str("name") == Ok(TRACKING_ROLE)
-        && role.get_array("permissions").is_ok_and(|permissions| {
-            permissions.len() == TRACKING_PERMISSIONS.len()
-                && TRACKING_PERMISSIONS.iter().all(|expected| {
-                    permissions
+        && role.get_array("permissions").is_ok_and(|stored| {
+            stored.len() == permissions.len()
+                && permissions.iter().all(|expected| {
+                    stored
                         .iter()
-                        .any(|actual| actual.as_str() == Some(expected))
+                        .any(|actual| actual.as_str() == Some(*expected))
                 })
         })
 }
